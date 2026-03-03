@@ -32,4 +32,11 @@ export interface Conversation {
   members?: User[];
 }
 
-export type AppState = 'login' | 'loading' | 'home' | 'chat' | 'internship' | 'compiler';
+export interface InternshipProgress {
+  user_id: string;
+  week_number: number;
+  completed: boolean;
+  test_score: number | null;
+}
+
+export type AppState = 'login' | 'loading' | 'home' | 'chat' | 'internship' | 'compiler' | 'profile';

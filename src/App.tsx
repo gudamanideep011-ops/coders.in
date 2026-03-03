@@ -10,7 +10,7 @@ import { io, Socket } from 'socket.io-client';
 import { jsPDF } from 'jspdf';
 import confetti from 'canvas-confetti';
 import Markdown from 'react-markdown';
-import { User as UserType, Video as VideoType, Message, AppState, Conversation } from './types';
+import { User as UserType, Video as VideoType, Message, AppState, Conversation, InternshipProgress } from './types';
 import { MOCK_VIDEOS, LANGUAGES, INTERNSHIP_NOTES } from './constants';
 
 // --- Components ---
@@ -220,7 +220,7 @@ const Header = ({ user, onAction }: { user: UserType, onAction: (state: AppState
           </div>
           <button 
             className="w-8 h-8 rounded-full overflow-hidden border border-emerald-500/50"
-            onClick={() => onAction('internship')}
+            onClick={() => onAction('profile')}
           >
             <img src={user.avatar} alt="avatar" referrerPolicy="no-referrer" />
           </button>
@@ -624,6 +624,62 @@ const InternshipView = ({ user }: { user: UserType }) => {
   const [showTest, setShowTest] = useState(false);
   const [testCompleted, setTestCompleted] = useState(false);
   const [certName, setCertName] = useState(user.username);
+  const [progress, setProgress] = useState<InternshipProgress[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchProgress();
+  }, [user.id]);
+
+  const fetchProgress = async () => {
+    try {
+      const res = await fetch(`/api/internship/progress/${user.id}`);
+      const data = await res.json();
+      setProgress(data);
+      
+      // Check if final test was already completed
+      const finalWeek = data.find((p: InternshipProgress) => p.week_number === 3);
+      if (finalWeek && finalWeek.test_score !== null) {
+        setTestCompleted(true);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updateProgress = async (week: number, completed: boolean, score: number | null = null) => {
+    try {
+      await fetch('/api/internship/progress', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: user.id,
+          week_number: week,
+          completed,
+          test_score: score
+        })
+      });
+      fetchProgress();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleWeekClick = (week: number) => {
+    setCurrentWeek(week);
+    const weekProgress = progress.find(p => p.week_number === week);
+    if (!weekProgress || !weekProgress.completed) {
+      updateProgress(week, true);
+    }
+  };
+
+  const handleTestPass = () => {
+    setTestCompleted(true);
+    setShowTest(false);
+    updateProgress(3, true, 100); // Assuming 100% for passing the demo test
+  };
 
   const generateCertificate = () => {
     const doc = new jsPDF({
@@ -670,29 +726,62 @@ const InternshipView = ({ user }: { user: UserType }) => {
     });
   };
 
+  const getWeekProgress = (week: number) => progress.find(p => p.week_number === week);
+  const completedCount = progress.filter(p => p.completed).length;
+  const finalScore = progress.find(p => p.week_number === 3)?.test_score;
+
   return (
     <div className="max-w-4xl mx-auto p-6 space-y-8">
       <div className="text-center space-y-4">
         <h1 className="text-4xl font-bold text-white">Developer Internship Program</h1>
         <p className="text-white/50">Complete 3 weeks of intensive learning to earn your verified certificate.</p>
+        
+        <div className="flex items-center justify-center gap-8 pt-4">
+          <div className="text-center">
+            <p className="text-2xl font-bold text-emerald-500">{completedCount}/3</p>
+            <p className="text-[10px] text-white/40 uppercase tracking-widest">Weeks Completed</p>
+          </div>
+          <div className="w-px h-8 bg-white/10" />
+          <div className="text-center">
+            <p className="text-2xl font-bold text-emerald-500">{finalScore !== undefined && finalScore !== null ? `${finalScore}%` : '--'}</p>
+            <p className="text-[10px] text-white/40 uppercase tracking-widest">Final Test Score</p>
+          </div>
+        </div>
+
+        {/* Progress Bar */}
+        <div className="max-w-md mx-auto h-2 bg-white/5 rounded-full overflow-hidden mt-6">
+          <motion.div 
+            initial={{ width: 0 }}
+            animate={{ width: `${(completedCount / 3) * 100}%` }}
+            className="h-full bg-emerald-500"
+          />
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {INTERNSHIP_NOTES.map((note) => (
-          <button
-            key={note.week}
-            onClick={() => setCurrentWeek(note.week)}
-            className={`p-6 rounded-2xl border transition-all text-left ${
-              currentWeek === note.week 
-                ? 'bg-emerald-600/20 border-emerald-500 shadow-lg shadow-emerald-500/10' 
-                : 'bg-white/5 border-white/10 hover:bg-white/10'
-            }`}
-          >
-            <div className="text-xs font-bold text-emerald-500 mb-2 uppercase tracking-widest">Week {note.week}</div>
-            <h3 className="text-lg font-bold text-white mb-2">{note.title}</h3>
-            <p className="text-xs text-white/50 line-clamp-2">{note.content}</p>
-          </button>
-        ))}
+        {INTERNSHIP_NOTES.map((note) => {
+          const weekProgress = getWeekProgress(note.week);
+          return (
+            <button
+              key={note.week}
+              onClick={() => handleWeekClick(note.week)}
+              className={`p-6 rounded-2xl border transition-all text-left relative overflow-hidden ${
+                currentWeek === note.week 
+                  ? 'bg-emerald-600/20 border-emerald-500 shadow-lg shadow-emerald-500/10' 
+                  : 'bg-white/5 border-white/10 hover:bg-white/10'
+              }`}
+            >
+              {weekProgress?.completed && (
+                <div className="absolute top-2 right-2 text-emerald-500">
+                  <CheckCircle2 size={16} />
+                </div>
+              )}
+              <div className="text-xs font-bold text-emerald-500 mb-2 uppercase tracking-widest">Week {note.week}</div>
+              <h3 className="text-lg font-bold text-white mb-2">{note.title}</h3>
+              <p className="text-xs text-white/50 line-clamp-2">{note.content}</p>
+            </button>
+          );
+        })}
       </div>
 
       <motion.div 
@@ -770,10 +859,7 @@ const InternshipView = ({ user }: { user: UserType }) => {
                   {['O(n)', 'O(log n)', 'O(n^2)', 'O(1)'].map((opt, i) => (
                     <button 
                       key={i}
-                      onClick={() => {
-                        setTestCompleted(true);
-                        setShowTest(false);
-                      }}
+                      onClick={handleTestPass}
                       className="w-full text-left p-4 bg-white/5 hover:bg-emerald-500/20 border border-white/5 hover:border-emerald-500/50 rounded-xl text-white/70 hover:text-white transition-all"
                     >
                       {opt}
@@ -785,6 +871,82 @@ const InternshipView = ({ user }: { user: UserType }) => {
           </motion.div>
         )}
       </AnimatePresence>
+    </div>
+  );
+};
+
+const ProfileView = ({ user }: { user: UserType }) => {
+  const [progress, setProgress] = useState<InternshipProgress[]>([]);
+
+  useEffect(() => {
+    fetch(`/api/internship/progress/${user.id}`)
+      .then(res => res.json())
+      .then(data => setProgress(data));
+  }, [user.id]);
+
+  const completedWeeks = progress.filter(p => p.completed).length;
+  const finalScore = progress.find(p => p.week_number === 3)?.test_score;
+
+  return (
+    <div className="max-w-4xl mx-auto p-8 space-y-12">
+      <div className="flex items-center gap-8">
+        <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-emerald-500/20">
+          <img src={user.avatar} alt="avatar" className="w-full h-full object-cover" />
+        </div>
+        <div className="space-y-2">
+          <h1 className="text-4xl font-bold text-white">{user.username}</h1>
+          <p className="text-emerald-500 font-medium">@{user.username.toLowerCase().replace(/\s/g, '')}</p>
+          <div className="flex gap-6 pt-2">
+            <div className="text-sm">
+              <span className="font-bold text-white">{user.coders_count}</span>
+              <span className="text-white/50 ml-1">coders</span>
+            </div>
+            <div className="text-sm">
+              <span className="font-bold text-white">12</span>
+              <span className="text-white/50 ml-1">videos</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="bg-[#1a1a1a] p-6 rounded-2xl border border-white/5 space-y-4">
+          <h3 className="text-lg font-bold text-white flex items-center gap-2">
+            <GraduationCap className="text-emerald-500" size={20} />
+            Internship Progress
+          </h3>
+          <div className="space-y-4">
+            <div className="flex justify-between text-sm">
+              <span className="text-white/50">Completion Status</span>
+              <span className="text-emerald-500 font-bold">{completedWeeks}/3 Weeks</span>
+            </div>
+            <div className="h-2 bg-white/5 rounded-full overflow-hidden">
+              <div 
+                className="h-full bg-emerald-500 transition-all duration-500" 
+                style={{ width: `${(completedWeeks / 3) * 100}%` }}
+              />
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-white/50">Final Test Score</span>
+              <span className="text-white font-bold">{finalScore !== undefined && finalScore !== null ? `${finalScore}%` : 'Not Attempted'}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-[#1a1a1a] p-6 rounded-2xl border border-white/5 space-y-4">
+          <h3 className="text-lg font-bold text-white flex items-center gap-2">
+            <Settings className="text-emerald-500" size={20} />
+            Account Settings
+          </h3>
+          <div className="space-y-2">
+            {['Edit Profile', 'Privacy', 'Notifications', 'Language', 'Help Center'].map((item) => (
+              <button key={item} className="w-full text-left p-3 hover:bg-white/5 rounded-lg text-white/70 text-sm transition-colors">
+                {item}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
@@ -891,6 +1053,8 @@ export default function App() {
         return <CompilerView />;
       case 'internship':
         return <InternshipView user={user!} />;
+      case 'profile':
+        return <ProfileView user={user!} />;
       default:
         return null;
     }

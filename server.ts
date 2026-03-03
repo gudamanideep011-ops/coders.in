@@ -47,6 +47,14 @@ db.exec(`
     views INTEGER DEFAULT 0,
     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
   );
+
+  CREATE TABLE IF NOT EXISTS internship_progress (
+    user_id TEXT,
+    week_number INTEGER,
+    completed INTEGER DEFAULT 0,
+    test_score INTEGER DEFAULT NULL,
+    PRIMARY KEY (user_id, week_number)
+  );
 `);
 
 // Populate mock videos
@@ -151,6 +159,24 @@ async function startServer() {
     members.forEach((userId: string) => stmt.run(id, userId));
     
     res.json({ id, name, is_group });
+  });
+
+  app.get("/api/internship/progress/:userId", (req, res) => {
+    const { userId } = req.params;
+    const progress = db.prepare("SELECT * FROM internship_progress WHERE user_id = ?").all(userId);
+    res.json(progress);
+  });
+
+  app.post("/api/internship/progress", (req, res) => {
+    const { user_id, week_number, completed, test_score } = req.body;
+    db.prepare(`
+      INSERT INTO internship_progress (user_id, week_number, completed, test_score)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(user_id, week_number) DO UPDATE SET
+        completed = excluded.completed,
+        test_score = COALESCE(excluded.test_score, test_score)
+    `).run(user_id, week_number, completed ? 1 : 0, test_score);
+    res.json({ status: "ok" });
   });
 
   // Socket.io logic
