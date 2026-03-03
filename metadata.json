@@ -1,0 +1,9 @@
+{
+  "name": "coders.in",
+  "description": "A social media platform for developers featuring video sharing, real-time chat, integrated compilers, and an internship program with certification.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ]
+}
